@@ -1,4 +1,4 @@
-> **Historical report (v2, holdout 0.9678).** Current results: [VALIDATION.md](VALIDATION.md).
+> **Data analysis: current. Scores: v2 (0.9678), superseded** — current results are in [VALIDATION.md](VALIDATION.md).
 
 # Research Report — Phases 1–5 (pre-implementation)
 
