@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Doppelgänger Explorer</title>
+<style>
+:root{--bg:#f6f5f1;--panel:#fff;--ink:#1d1f24;--muted:#6b6f78;--line:#e4e2dc;--good:#1f8a4c;--good-bg:#e5f4ea;
+--bad:#c23b32;--bad-bg:#fbe9e7;--warn:#a86b00;--warn-bg:#fdf1d8;--accent:#3b4cca;--accent-bg:#e9ebfb;--mono:ui-monospace,SFMono-Regular,Consolas,monospace}
+@media (prefers-color-scheme:dark){:root{--bg:#121317;--panel:#1b1d23;--ink:#eceef2;--muted:#9aa0ab;--line:#2c2f37;--good:#4cc27d;
+--good-bg:#173323;--bad:#ef6a60;--bad-bg:#3a1c1a;--warn:#e7b04a;--warn-bg:#3a2d12;--accent:#8c98ff;--accent-bg:#232748}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{padding:28px 20px 8px;max-width:1180px;margin:auto}h1{margin:0;font-size:28px;letter-spacing:-.02em}
+.tag{color:var(--muted);margin:4px 0 14px}.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:5px 12px;font-size:13px}
+.chip b{font-variant-numeric:tabular-nums}main{max-width:1180px;margin:auto;padding:8px 20px 60px}
+.actions{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 18px;align-items:center}
+button{font:inherit;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:10px;padding:8px 13px;cursor:pointer}
+button:hover{border-color:var(--accent)}button.primary{background:var(--accent);color:#fff;border-color:var(--accent);font-weight:600;padding:10px 16px}
+input{font:inherit;padding:8px 12px;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:var(--ink);min-width:220px}
+.grid{display:grid;grid-template-columns:340px 1fr;gap:18px;align-items:start}@media(max-width:860px){.grid{grid-template-columns:1fr}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px}
+.entity{position:sticky;top:12px}.label{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:6px}
+.ename{font-size:21px;font-weight:650;margin:2px 0 6px}.addr{color:var(--ink);opacity:.9}
+.story{margin-top:14px;padding:12px;border-radius:10px;background:var(--accent-bg);font-size:14px}
+.cands{display:flex;flex-direction:column;gap:12px}.card{border-left:4px solid var(--line)}
+.card.matched{border-left-color:var(--good)}.card.rejected{border-left-color:var(--bad)}.card.claimed{border-left-color:var(--warn)}
+.row{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px}
+.badge{font-size:12px;font-weight:600;border-radius:6px;padding:2px 8px}.b-good{background:var(--good-bg);color:var(--good)}
+.b-bad{background:var(--bad-bg);color:var(--bad)}.b-warn{background:var(--warn-bg);color:var(--warn)}.b-mut{background:var(--bg);color:var(--muted)}
+.cname{font-weight:600;font-size:16px}.id{font:12px var(--mono);color:var(--muted)}
+mark.ok{background:var(--good-bg);color:var(--good);border-radius:4px;padding:0 3px;font-weight:700}
+mark.no{background:var(--bad-bg);color:var(--bad);border-radius:4px;padding:0 3px;font-weight:700}
+mark.p{background:var(--accent-bg);color:var(--accent);border-radius:4px;padding:0 3px;font-weight:700}
+.scores{display:grid;grid-template-columns:auto 1fr auto;gap:4px 10px;align-items:center;font-size:13px;margin:8px 0}
+.bar{height:8px;border-radius:5px;background:var(--bg);overflow:hidden}.bar i{display:block;height:100%;background:var(--muted)}
+.bar.final i{background:var(--accent)}ul.reasons{margin:6px 0 0;padding:0;list-style:none;font-size:14px}
+ul.reasons li{padding:2px 0}.s-p{color:var(--good);font-weight:700}.s-m{color:var(--bad);font-weight:700}.s-d{color:var(--muted);font-weight:700}
+details{margin-top:8px}summary{cursor:pointer;color:var(--accent);font-size:13px}
+.shap{display:grid;grid-template-columns:190px 1fr;gap:3px 8px;font-size:12px;margin-top:6px;align-items:center}
+.sb{position:relative;height:10px}.sb i{position:absolute;top:0;height:10px;border-radius:3px}.sb .zero{position:absolute;left:50%;top:-2px;bottom:-2px;width:1px;background:var(--line)}
+table{border-collapse:collapse;width:100%;font-size:13px}td,th{padding:5px 8px;border-bottom:1px solid var(--line);text-align:left}
+td.n{text-align:right;font-variant-numeric:tabular-nums}.hbar{height:9px;background:var(--accent);border-radius:4px}
+h2{font-size:18px;margin:34px 0 10px}.muted{color:var(--muted)}.err{color:var(--bad)}
+</style>
+</head>
+<body>
+<header>
+  <h1>Doppelgänger</h1>
+  <div class="tag">Every business has look-alikes. The engine finds the real records — and explains why the others are impostors.</div>
+  <div class="chips" id="chips"></div>
+</header>
+<main>
+  <div class="actions">
+    <button class="primary" onclick="demo('lookalike')">Show me a suspicious look-alike</button>
+    <button onclick="demo('lowsim')">Looks nothing alike — still the same business</button>
+    <button onclick="demo('empty')">Empty address, still matched</button>
+    <button onclick="demo('branch')">Same name, different branch</button>
+    <button onclick="demo('france')">France (learned without labels)</button>
+    <input id="q" placeholder="Search a business name or S1-id…" onkeydown="if(event.key==='Enter')search()">
+  </div>
+  <div id="results"></div>
+  <div class="grid" id="view"><div class="panel muted">Pick a demo above to inspect one Source-1 entity and all of its candidate records.</div></div>
+  <h2>How much does the Doppelgänger logic buy?</h2>
+  <div class="panel" id="eval"><span class="muted">Loading validation results…</span></div>
+</main>
+<script>
+const $=s=>document.querySelector(s), esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let counters={}, current=null;
+const nums=s=>(String(s).match(/\d+/g)||[]).map(x=>String(+x));
+function hl(addr, ref, isS1){ // highlight house numbers: agreeing (green) / disagreeing (red) with Source 1
+  const r=new Set(ref), primary=ref[0];
+  return esc(addr).replace(/\d+/g,m=>{const v=String(+m);
+    if(isS1) return v===primary?`<mark class="p">${m}</mark>`:m;
+    return r.has(v)?`<mark class="ok">${m}</mark>`:`<mark class="no">${m}</mark>`;});
+}
+async function api(u){const r=await fetch(u); if(!r.ok) throw new Error((await r.json()).detail||r.statusText); return r.json();}
+async function demo(kind){counters[kind]=(counters[kind]||0)+1;
+  try{const d=await api(`/api/demo/${kind}?seed=${counters[kind]*7919}`); current=kind; show(d.s1_id);}catch(e){$('#view').innerHTML=`<div class="panel err">${esc(e.message)}</div>`}}
+async function search(){const q=$('#q').value.trim(); if(q.length<2) return;
+  const r=await api('/api/search?q='+encodeURIComponent(q));
+  $('#results').innerHTML=r.length?'<div class="panel" style="margin-bottom:14px">'+r.map(x=>`<div><a href="#" onclick="show('${esc(x.s1_id)}');return false">${esc(x.s1_name)}</a> <span class="id">${esc(x.s1_id)} · ${esc(x.country)}</span></div>`).join('')+'</div>':'<div class="panel muted" style="margin-bottom:14px">No entity in the evidence store matches.</div>';}
+const VERD={matched:['matched','b-good','MATCHED'],rejected:['rejected','b-bad','REJECTED'],'claimed by another entity':['claimed','b-warn','CLAIMED BY ANOTHER ENTITY']};
+function story(d){
+  const m=d.candidates.filter(c=>c.verdict==='matched'), low=m.filter(c=>c.nm<50);
+  if(d.fooled) return `A plain similarity model scored <b>${d.fooled}</b> look-alike record(s) above 0.5. Doppelgänger compared them against their rivals and the house numbers, and rejected them.`;
+  if(low.length) return `<b>${low.length}</b> matched record(s) share almost no name tokens with this business. They were recognised from the noise pattern (pseudo-name, URL, native script, alias) and the address.`;
+  if(!d.candidates.length) return 'Blocking produced no candidates for this entity, so it is predicted to have no matches.';
+  return `${m.length} of ${d.candidates.length} candidate records were matched.`;
+}
+async function show(id){
+  let d; try{d=await api('/api/entity/'+encodeURIComponent(id));}catch(e){$('#view').innerHTML=`<div class="panel err">${esc(e.message)}</div>`;return}
+  const ref=nums(d.addr);
+  const acc=d.correct==null?'':`<div class="chip" style="margin-top:10px">Decisions agreeing with ground truth: <b>${d.correct}/${d.candidates.length}</b></div>`;
+  const left=`<div class="panel entity"><div class="label">Real entity · Source 1</div><div class="ename">${esc(d.name)}</div>
+    <div class="addr">${hl(d.addr,ref,true)}</div><div class="row" style="margin-top:8px"><span class="badge b-mut">${esc(d.country)}</span>
+    <span class="badge b-mut">${esc(d.split)}</span><span class="id">${esc(d.id)}</span></div>
+    <div class="story">${story(d)}</div>${acc}</div>`;
+  const cards=d.candidates.map(c=>{const [cls,b,t]=VERD[c.verdict];
+    const truth=c.truth==null?'':c.truth?'<span class="badge b-good">truth: same business</span>':'<span class="badge b-bad">truth: different business (decoy)</span>';
+    const mx=Math.max(...c.shap.map(s=>Math.abs(s[1])),1e-6);
+    const shap=c.shap.map(([n,v])=>{const w=Math.abs(v)/mx*50; return `<div>${esc(n)}</div><div class="sb"><span class="zero"></span><i style="left:${v>=0?50:50-w}%;width:${w}%;background:var(${v>=0?'--good':'--bad'})"></i></div>`}).join('');
+    return `<div class="panel card ${cls}"><div class="row"><span class="badge ${b}">${t}</span>${truth}<span class="id">${esc(c.id)}</span></div>
+      <div class="cname">${esc(c.name)}</div><div class="addr">${c.addr?hl(c.addr,ref,false):'<span class="muted">(empty address)</span>'}</div>
+      <div class="scores"><span class="muted">similarity model</span><div class="bar"><i style="width:${c.p1*100}%"></i></div><b>${c.p1.toFixed(2)}</b>
+      <span>Doppelgänger</span><div class="bar final"><i style="width:${c.p2*100}%"></i></div><b>${c.p2.toFixed(2)}</b></div>
+      <ul class="reasons">${c.reasons.map(([s,t])=>`<li><span class="${s==='+'?'s-p':s==='-'?'s-m':'s-d'}">${s==='+'?'+':s==='-'?'−':'•'}</span> ${esc(t)}</li>`).join('')}</ul>
+      <details><summary>Why this score? (feature contributions)</summary><div class="shap">${shap}</div></details></div>`}).join('');
+  $('#view').innerHTML=left+`<div class="cands">${cards||'<div class="panel muted">No candidates.</div>'}</div>`;
+  $('#results').innerHTML='';
+}
+function table(t,fmt){ if(!t) return '<div class="muted">Not available — run validation first.</div>';
+  return `<table><tr><th></th>${t.columns.map(c=>`<th>${esc(c)}</th>`).join('')}</tr>${t.index.map((r,i)=>`<tr><td>${esc(r)}</td>${t.data[i].map(v=>`<td class="n">${fmt(v)}</td>`).join('')}</tr>`).join('')}</table>`;}
+async function summary(){ const s=await api('/api/summary'); const c=s.comparison;
+  if(c){const i=c.columns.indexOf('ALL'), rows=c.index.map((n,k)=>[n,c.data[k][i]]), fin=rows[rows.length-1][1], base=rows[0][1];
+    $('#chips').innerHTML=`<span class="chip">holdout macro F0.5 <b>${fin.toFixed(4)}</b></span><span class="chip">tuned fuzzy matcher <b>${base.toFixed(4)}</b></span><span class="chip">${s.entities.toLocaleString()} entities explorable</span>`;
+    const bars=rows.map(([n,v])=>`<tr><td>${esc(n)}</td><td style="width:45%"><div class="hbar" style="width:${Math.max(0,(v-0.6)/0.4*100)}%"></div></td><td class="n">${v.toFixed(4)}</td></tr>`).join('');
+    const keep=['ALL','country=US','country=India','singleton','has look-alike decoy candidate','has unusual-name true match','has empty-address true match'];
+    const sub={columns:keep.filter(k=>c.columns.includes(k)),index:c.index,data:c.data.map(r=>keep.filter(k=>c.columns.includes(k)).map(k=>r[c.columns.indexOf(k)]))};
+    $('#eval').innerHTML=`<div class="label">Macro F0.5 on ${'held-out'} Source-1 entities (bar axis 0.60 → 1.00)</div><table>${bars}</table>
+      <h2 style="font-size:15px">By slice</h2>${table(sub,v=>v==null?'–':v.toFixed(4))}
+      <h2 style="font-size:15px">Unlabelled-country test: India treated as unlabelled</h2>${table(s.loco?{columns:['F0.5','precision','recall'],index:s.loco.index,data:s.loco.data.map(r=>[r[s.loco.columns.indexOf('F0.5')],r[s.loco.columns.indexOf('precision')],r[s.loco.columns.indexOf('recall')]])}:null,v=>(+v).toFixed(4))}`;}
+}
+summary().catch(e=>$('#eval').innerHTML=`<span class="err">${esc(e.message)}</span>`);
+</script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+.venv/
+work/
+work_repro/
+output/
+student_resource/
+*.zip
+__pycache__/
+.pytest_cache/
+work_exp/
+artifacts/
+submissions/*/*.tsv
