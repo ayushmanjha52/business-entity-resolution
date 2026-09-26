@@ -61,6 +61,9 @@ Unless noted, scores are macro F0.5 on the 10 % Source-1 validation holdout (220
 | 38 | France label-free check: numberless look-alikes (true 99.5 % in US) predicted only 75.7 % in France | suspected a France recall leak | investigated (#39) |
 | 39 | France scored by A = French model, B = labelled US/India model, C = mean | matches/entity 3.359 / 3.358 / 3.334; numberless look-alikes predicted 75.7 % / 72.7 % / 74.6 % | the models agree: no leak; file unchanged (`synth.unlabelled_weight` = 1.0) |
 
+| 40 | Leaderboard probe: France scored by mean of French and US/India models | same leaderboard score as 0.9709 | file unchanged |
+| 41 | XGBoost and CatBoost vs LightGBM (stage-1 features, 1M TRAIN pairs -> VALID pairs) | best F1 0.9797 (XGBoost) / 0.9790 (CatBoost) vs 0.9797 (LightGBM) | no rebuild: no gain |
+
 ## Negative or neutral results (kept for honesty)
 - Stage-2 gain importance ranks the noise flags near zero, but removing them costs 0.0007 F0.5. Gain importance under-reports features that act in rare but decisive cases.
 - The synthetic block closes only about 23 % of the gap to real labels in the leave-India-out test (0.9098 → 0.9193 vs 0.9513). Operators specific to the unlabelled country cannot be generated if they are never observed.

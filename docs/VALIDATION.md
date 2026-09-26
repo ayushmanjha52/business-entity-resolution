@@ -96,6 +96,10 @@ Each record goes to its best entity, and each entity keeps the probability-ranke
 | LightGBM 63 leaves, 400 trees | 0.9987 | 0.9982 | 0.0444 | 0.9791 |
 | **LightGBM 127 leaves, lr 0.06, 600 trees (used)** | 0.9987 | 0.9983 | 0.0428 | 0.9798 |
 | LightGBM 255 leaves, 800 trees | 0.9988 | 0.9983 | 0.0428 | 0.9799 |
+| XGBoost (lossguide, 127 leaves, lr 0.06, 600 trees) | 0.9987 | 0.9982 | 0.0429 | 0.9797 |
+| CatBoost (depth 8, lr 0.08, 1000 trees) | 0.9986 | 0.9981 | 0.0448 | 0.9790 |
+
+XGBoost ties LightGBM and CatBoost trails it; neither justifies a rebuild. Both are optional: `scripts/compare_models.py` includes them only when installed (`pip install xgboost catboost`, Apache-2.0).
 
 ## 5. Experiments that were measured and rejected
 | Change | Measured | Decision |

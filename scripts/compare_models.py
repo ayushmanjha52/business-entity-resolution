@@ -34,6 +34,26 @@ def best_f1(y, p):
     return float(f1[i]), float(p[o][i])
 
 
+def other_boosters(cfg) -> dict:
+    """XGBoost / CatBoost (Apache-2.0) at a capacity comparable to the LightGBM setting; skipped if not installed."""
+    out = {}
+    try:
+        import xgboost as xgb
+        out["XGBoost (lossguide, 127 leaves, lr 0.06, 600 trees)"] = lambda: xgb.XGBClassifier(
+            n_estimators=600, learning_rate=0.06, max_depth=0, max_leaves=127, grow_policy="lossguide",
+            tree_method="hist", subsample=0.7, colsample_bytree=0.8, min_child_weight=1, n_jobs=-1,
+            random_state=cfg.seed)
+    except ImportError:
+        pass
+    try:
+        from catboost import CatBoostClassifier
+        out["CatBoost (depth 8, lr 0.08, 1000 trees)"] = lambda: CatBoostClassifier(
+            iterations=1000, learning_rate=0.08, depth=8, thread_count=-1, random_seed=cfg.seed, verbose=0)
+    except ImportError:
+        pass
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default=None)
@@ -76,6 +96,12 @@ def main():
         b = lgb.train(params, lgb.Dataset(Xtr, ytr), num_boost_round=trees)
         name = f"LightGBM ({leaves} leaves, lr {lr}, {trees} trees)"
         rows[name] = (b.predict(Xva), time.time() - t)
+        log(f"  {name}: {rows[name][1]:.0f}s")
+    for name, make in other_boosters(cfg).items():
+        t = time.time()
+        clf = make()
+        clf.fit(Xtr, ytr)
+        rows[name] = (clf.predict_proba(Xva)[:, 1], time.time() - t)
         log(f"  {name}: {rows[name][1]:.0f}s")
 
     table = pd.DataFrame({name: {"ROC_AUC": roc_auc_score(yva, p), "PR_AUC": average_precision_score(yva, p),
