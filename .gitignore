@@ -6,3 +6,4 @@ student_resource/
 __pycache__/
 .pytest_cache/
 output_probe_*/
+catboost_info/

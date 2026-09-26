@@ -48,7 +48,8 @@ def other_boosters(cfg) -> dict:
     try:
         from catboost import CatBoostClassifier
         out["CatBoost (depth 8, lr 0.08, 1000 trees)"] = lambda: CatBoostClassifier(
-            iterations=1000, learning_rate=0.08, depth=8, thread_count=-1, random_seed=cfg.seed, verbose=0)
+            iterations=1000, learning_rate=0.08, depth=8, thread_count=-1, random_seed=cfg.seed, verbose=0,
+            allow_writing_files=False)
     except ImportError:
         pass
     return out
