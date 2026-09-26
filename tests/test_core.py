@@ -58,7 +58,7 @@ def test_region_equivalence_and_abbreviations():
     d = prep([("S3-1", "x", "22 Rue Racine, Dunkerque, Nord", "France"),
               ("S1-1", "x", "22 R. Racine, Dunkerque, Hauts-de-France", "France"),
               ("S3-2", "x", "5 Main Street, Chennai, TN", "India")])
-    assert d.addr_norm[0] == d.addr_norm[1] == "22 rue racine dunkerque hauts de france"
+    assert d.addr_norm[0] == d.addr_norm[1] == "22 rue racine dunkerque hauts france"
     assert list(d.localities[0]) == ["France|hauts de france"]
     assert d.addr_norm[2].endswith("tamil nadu") and "st" in d.addr_norm[2].split()
 

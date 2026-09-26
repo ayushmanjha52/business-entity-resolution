@@ -22,7 +22,7 @@ def owner(s1, c, p) -> np.ndarray:
 def select(s1, p, min_prob=0.0, beta2=0.25) -> np.ndarray:
     """Boolean mask of selected pairs (pairs should already be owner-filtered)."""
     o = np.lexsort((-p, s1))
-    s, q = s1[o], p[o]
+    s, q = s1[o], p[o].astype(np.float64)       # running sums over millions of pairs: float32 loses the per-entity part
     start = np.r_[True, s[1:] != s[:-1]]
     gid = np.cumsum(start) - 1
     first = np.flatnonzero(start)

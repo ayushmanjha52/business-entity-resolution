@@ -5,21 +5,24 @@ Given business records from three noisy sources, Doppelgänger finds every Sourc
 Similarity alone fails on this data. The generator plants **sibling decoys**: records with the same name and street but a house number moved a few doors. It also disguises **genuine** records as pseudo-words, URLs, native-script names, aliases or empty addresses. Doppelgänger judges each record by the noise pattern that produced it and against its **rivals**, then builds each entity's list to maximise expected F0.5.
 
 ## Results
-Source-1 training entities are split by a hash of their id: TRAIN 50 % (fitting), VALID 10 % (every choice), TEST 10 % (scored once, after the design was frozen). Details: [docs/VALIDATION.md](docs/VALIDATION.md).
+Source-1 training entities are split by a hash of their id: TRAIN 50 % (fitting), VALID 10 % (every choice), TEST 10 % (scored once per frozen design). The test split is decoy-heavier than train, measured without labels: hard same-street siblings per entity US 1.04 → 1.76, India 0.64 → 1.04. So VALID and TEST are scored **at test-like density**, adding calibrated synthetic sibling decoys (`train_aug`). Details: [docs/VALIDATION.md](docs/VALIDATION.md).
 
-| System | VALID (220,929) | **TEST (220,804)** |
+| System | VALID, test-like | **TEST, test-like** |
 |---|---|---|
-| Tuned fuzzy matcher (name ≥ 85, address ≥ 70) | 0.7351 | 0.7347 |
-| Stage-1 LightGBM + tuned global threshold | 0.9758 | 0.9757 |
-| **Doppelgänger v3** (competition + coherence + ownership + expected-F0.5 lists) | **0.9806** | **0.9806** |
-| Doppelgänger v2 (previous submission) | 0.9678 | – |
+| Tuned fuzzy matcher | – | 0.6529 |
+| v3 model (trained at train density) | 0.9552 | – |
+| **v4: trained at test-like density** (2-stage LightGBM + ownership + expected-F0.5 lists) | **0.9754** | **0.9752** |
 
-- TEST, final system: precision 0.9953, recall 0.9539, F1 0.9742, ROC-AUC 0.9992. US 0.9852, India 0.9736.
-- Candidate generation: pair recall 0.9794 on all 2.2M training entities (18.6M pairs). A perfect matcher on these candidates would score 0.9929.
-- **99 % is not reached.** The remaining 0.019 splits into 0.007 of true matches that blocking never proposes and 0.012 of model errors. The model errors are mostly empty-address records of businesses whose generated name is shared by dozens of Source-1 entities.
-- France has no labels, so it cannot be scored. It is handled by a model trained with a synthetic block produced by re-applying the measured noise generator.
+- TEST (v4): precision 0.9921, recall 0.9462, F1 0.9686, ROC-AUC 0.9986. US 0.9794, India 0.9688.
+- The same v4 model at plain train density scores 0.9783 on VALID; v3 scored 0.9806 there but 0.9552 at test-like density.
+- Candidate generation: pair recall 0.9794 on all 2.2M training entities; a perfect matcher on these candidates would score 0.9929.
+- France has no labels. Its model trains on synthetic French records plus a self-training round on confidently decided real French test pairs. That approach, validated with India treated as unlabelled, gave 0.9392 → 0.9424.
+- **99 % is not reached** on any held-out measurement. What remains:
+  - true matches blocking never proposes: 0.007;
+  - hard same-street siblings;
+  - empty-address records whose name is shared by several Source-1 entities.
 
-Test submission: 1,732,544 rows, 5,772,346 matched ids, official validator **PASS** with `--check-ids`.
+Test submission: 1,732,544 rows, 5,729,248 matched ids, official validator **PASS** with `--check-ids`.
 
 ## Quick start
 ```bash
@@ -38,7 +41,7 @@ or stage by stage. Every stage caches its output in `artifacts/` and later stage
 | Command | Output |
 |---|---|
 | `python -m doppelganger prepare` | normalised parquet + lexicon learned from TRAIN-role labels (`artifacts/base`, `artifacts/final`, `artifacts/lexicon.json`) |
-| `python -m doppelganger block` | candidate pairs + recall/cost curve and oracle ceiling (`artifacts/pairs_*.parquet`) |
+| `python -m doppelganger block` | candidate pairs + recall/cost curve and oracle ceiling (`artifacts/pairs_*.parquet`); the calibrated `train_aug` decoys are built on first use by `train` |
 | `python -m doppelganger train` | development stage-1/stage-2 LightGBM on TRAIN entities (`artifacts/models/`) |
 | `python -m doppelganger validate` | decision floor chosen on VALID and frozen (`artifacts/decision.json`); VALID report |
 | `python -m doppelganger test` | one-off TEST report with the frozen design (`artifacts/validation/*_test.*`) |

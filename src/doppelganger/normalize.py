@@ -17,7 +17,8 @@ ALIAS_RE = (r"(?i)^(?P<pre>.*?)\s+(?:formerly known as|formerly:?|f/k/a|fka|a/k/
 URL_RE = r"(?:\.(?:com|in|net|org|fr|co|io)\b|^[@#]|www\.)"
 SCRIPT_RE = r"[\x{0370}-\x{FFFF}]"          # any non-Latin letter (Devanagari, Tamil, Bengali, ...)
 LEGAL = set("""llc inc incorporated corp corporation co company ltd limited pvt private llp lp pllc pc plc pa
-the of and et ms sri shri smt dr sarl sas sasu eurl sa sci ei cie snc selarl ets""".split())
+the of and et ms sri shri smt dr sarl sas sasu eurl sa sci ei cie snc selarl ets societe etablissements
+de du des la le les au aux""".split())   # French function words carry no identity
 # Street-type / direction abbreviations -> one canonical short form (both sides get the same form).
 ABBREV = {**dict.fromkeys(["street", "saint", "st", "str"], "st"), **dict.fromkeys(["road", "rd"], "rd"),
           **dict.fromkeys(["drive", "dr"], "dr"), **dict.fromkeys(["avenue", "ave", "av"], "ave"),
@@ -29,9 +30,13 @@ ABBREV = {**dict.fromkeys(["street", "saint", "st", "str"], "st"), **dict.fromke
           **dict.fromkeys(["parkway", "pkwy"], "pkwy"), **dict.fromkeys(["north", "n"], "n"),
           **dict.fromkeys(["south", "s"], "s"), **dict.fromkeys(["east", "e"], "e"),
           **dict.fromkeys(["west", "w"], "w"), **dict.fromkeys(["sainte", "ste"], "ste"),
+          **dict.fromkeys(["allee", "all", "alle"], "all"), **dict.fromkeys(["cours", "crs"], "crs"),
+          **dict.fromkeys(["route", "rte"], "rte"), **dict.fromkeys(["residence", "res"], "res"),
+          **dict.fromkeys(["square", "sq"], "sq"), **dict.fromkeys(["faubourg", "fbg"], "fbg"),
           "apartment": "apt", "suite": "ste", "building": "bldg", "floor": "flr", "nagar": "ngr"}
 # Tokens injected as noise around numbers / placeholders ("H.no 954", "Door No", "N°", "null", "CDP").
-ADDR_STOP = {"no", "nº", "hno", "h", "door", "null", "n/a", "na", "cdp", "fcdp", "city", "of", "the", "unit"}
+ADDR_STOP = {"no", "nº", "hno", "h", "door", "null", "n/a", "na", "cdp", "fcdp", "city", "of", "the", "unit",
+             "de", "du", "des", "la", "le", "les", "etage", "eme"}
 
 
 def _re(a, pat, rep=" "):

@@ -21,13 +21,23 @@ from .utils import PEAK, TIMINGS, log, rss_gb
 
 
 def _final(cfg):
-    """Labelled countries: model on real labels. Unlabelled countries (France): + synthetic block."""
+    """Labelled countries: model on real labels. Unlabelled countries (France): + synthetic block, then optionally
+    a self-training round on their real test pairs pseudo-labelled by the first-round model."""
     pipeline.train(cfg, tag=pipeline.FINAL, roles=pipeline.LABELLED_ROLES)
-    if cfg.synth.enabled:
-        from . import selfsup
-        extra = selfsup.france_block(cfg)
-        if extra is not None:
-            pipeline.train(cfg, extra=extra, tag=pipeline.FINAL + pipeline.UNLABELLED, roles=pipeline.LABELLED_ROLES)
+    if not cfg.synth.enabled:
+        return
+    from . import selfsup
+    tag = pipeline.FINAL + pipeline.UNLABELLED
+    extra = selfsup.france_block(cfg)
+    if extra is None:
+        return
+    # the unlabelled-country model learns mostly from its synthetic / pseudo-labelled blocks; real labelled pairs
+    # of TRAIN entities are enough alongside them and keep the refit within 16 GB
+    pipeline.train(cfg, extra=extra, tag=tag)
+    if cfg.synth.self_training:
+        del extra
+        p2 = pipeline.score(cfg, "test")[-1]
+        pipeline.train(cfg, extra=selfsup.france_block(cfg, p2), tag=tag)
 
 
 def _validate(cfg):

@@ -26,8 +26,57 @@ def get_lexicon(cfg):
     return lexicon.Lexicon.load(p)
 
 
+AUG = "train_aug"   # train split + synthetic sibling decoys at test-like density (see augment.py)
+
+
+def fit_split(cfg) -> str:
+    """Split that trains and evaluates the models: train, or train_aug when split.decoy_augment is on."""
+    return AUG if getattr(cfg.split, "decoy_augment", False) else "train"
+
+
 def load(cfg, split, columns=None):
+    if split == AUG:
+        from . import augment
+        _ensure_aug(cfg)
+        s1, cand = io.load_split(cfg, "train", get_lexicon(cfg), columns)
+        return s1, pa.concat_tables([cand, augment.table(cfg, columns or cand.column_names)]).combine_chunks()
     return io.load_split(cfg, split, get_lexicon(cfg), columns)
+
+
+def _aug_part(cfg, columns):
+    """(train Source-1 table, synthetic decoy table, number of real train candidates)."""
+    from . import augment
+    s1, cand = io.load_split(cfg, "train", get_lexicon(cfg), columns)
+    return s1, augment.table(cfg, columns), cand.num_rows
+
+
+def _ensure_aug(cfg):
+    """Build train_aug once: block and featurise the synthetic decoys (per record, so independent of the real
+    records), then thin them to the test split's hard-sibling density. Only calibrated files are ever read."""
+    from . import augment
+    if augment.calibration_path(cfg).exists():
+        return
+    pp, fp = (cfg.paths.work_dir / f"{k}_{AUG}.parquet" for k in ("pairs", "feats"))
+    real = candidates(cfg, "train")
+    s1, aug, n_real = _aug_part(cfg, list(dict.fromkeys(BLOCK_COLS + FEAT_COLS)))
+    if pp.exists():
+        pairs = pq.read_table(pp)
+    else:
+        with stage("[2/6] candidate generation (synthetic decoys)"):
+            extra = blocking.generate(s1, aug, cfg)
+        extra["c"] = extra["c"] + n_real
+        pairs = pa.concat_tables([real, pa.table(extra).cast(real.schema)])
+        pq.write_table(pairs, pp)
+    if fp.exists():
+        X = pd.read_parquet(fp)
+    else:
+        part = pairs.slice(real.num_rows)
+        with stage(f"[3/6] pair features (synthetic decoys, {part.num_rows:,} pairs)"):
+            Xa = features.pair_features(s1, aug, part["s1"].to_numpy(), part["c"].to_numpy() - n_real,
+                                        part["votes"].to_numpy(), cfg)
+        X = pd.concat([pair_features(cfg, "train"), Xa], ignore_index=True)
+        X.to_parquet(fp)
+    augment.calibrate(cfg, pairs, X, real.num_rows, n_real)
 
 
 UNUSED, TRAIN, VALID, TEST = 0, 1, 2, 3
@@ -52,6 +101,9 @@ BLOCK_COLS = ["entity_id", "country", "name_tokens", "name_nospace", "addr_token
 def candidates(cfg, split):
     p = cfg.paths.work_dir / f"pairs_{split}.parquet"
     if p.exists():
+        return pq.read_table(p)
+    if split == AUG:
+        _ensure_aug(cfg)
         return pq.read_table(p)
     s1, cand = load(cfg, split, BLOCK_COLS)
     with stage(f"[2/6] candidate generation ({split})"):
@@ -91,6 +143,8 @@ SIB_NAME = 90   # "look-alike": name similarity at least this, but the S1 house 
 
 def pair_features(cfg, split) -> pd.DataFrame:
     p = cfg.paths.work_dir / f"feats_{split}.parquet"
+    if split == AUG:
+        _ensure_aug(cfg)
     if not p.exists():
         s1, cand = load(cfg, split, FEAT_COLS)
         pairs = candidates(cfg, split)
@@ -111,12 +165,26 @@ def sibling_flag(X) -> np.ndarray:
     return ((X.nm_tset >= SIB_NAME) & (X.num_p_in == 0)).to_numpy(np.float32)
 
 
-def stage2_matrix(X, s1, c, p1, cand=None) -> pd.DataFrame:
-    """Pairwise features + competition features (+ group-coherence features when a cand table is given)."""
-    parts = [X.reset_index(drop=True), features.competition_features(s1, c, p1, sibling_flag(X))]
+def rival_matrix(X, s1, c, p, cand=None, prefix="") -> pd.DataFrame:
+    """X + competition features (+ group-coherence features when a cand table is given) computed from scores p."""
+    parts = [features.competition_features(s1, c, p, sibling_flag(X))]
     if cand is not None:
-        parts.append(features.coherence_features(s1, c, p1, cand))
-    return pd.concat(parts, axis=1)
+        parts.append(features.coherence_features(s1, c, p, cand))
+    return pd.concat([X.reset_index(drop=True)] + [f.add_prefix(prefix) for f in parts], axis=1)
+
+
+def stage2_matrix(X, s1, c, p1, cand=None) -> pd.DataFrame:
+    return rival_matrix(X, s1, c, p1, cand)
+
+
+def stage3_matrix(X2, s1, c, p2, cand=None) -> pd.DataFrame:
+    """Stage 3 re-reads the rivalry with the sharper stage-2 scores (VALID: 0.9799 -> 0.9808)."""
+    return rival_matrix(X2, s1, c, p2, cand, prefix="s3_")
+
+
+def final_prob(sc: pd.DataFrame) -> np.ndarray:
+    """Probability of the last stage stored in a scores file."""
+    return (sc["p"] if "p" in sc else sc["p2"]).to_numpy()
 
 
 def coherence_table(cfg, split):
@@ -131,18 +199,20 @@ def labels(cfg, s1_ids, cand_ids, ps, pcand) -> np.ndarray:
 
 # ----------------------------------------------------------------------------------------------- training
 def train(cfg, extra=None, countries=None, tag="", roles=(TRAIN,)):
-    """Stage-1 (pairwise, out-of-fold) then stage-2 (pairwise + competition), on the entities of `roles`.
+    """Stage 1 (pairwise), stage 2 (+ competition and coherence from out-of-fold stage-1 scores) and, when
+    model.stages == 3, stage 3 (the same rival features recomputed from out-of-fold stage-2 scores).
 
     roles:     entity roles whose labelled pairs train the models (development: TRAIN; final model: all labelled).
     countries: restrict real training pairs to these countries (leave-one-country-out experiments).
     extra:     optional synthetic block {X, y, s1, c} (generator inversion) appended to the training data;
                its stage-1 scores are out-of-fold too, so stage-2 sees them exactly like real pairs."""
-    s1, cand = load(cfg, "train", ["entity_id", "country"])
-    pairs = candidates(cfg, "train")
+    split = fit_split(cfg)
+    s1, cand = load(cfg, split, ["entity_id", "country"])
+    pairs = candidates(cfg, split)
     ps, pcand = pairs["s1"].to_numpy(), pairs["c"].to_numpy()
     y, _ = labels(cfg, s1["entity_id"], cand["entity_id"], ps, pcand)
     role = split_roles(cfg, s1["entity_id"].to_numpy(zero_copy_only=False))[ps]
-    X = model_view(cfg, pair_features(cfg, "train"))
+    X = model_view(cfg, pair_features(cfg, split))
     tr = np.isin(role, roles)
     if countries:
         tr &= np.isin(s1["country"].to_numpy(zero_copy_only=False)[ps], countries)
@@ -160,20 +230,42 @@ def train(cfg, extra=None, countries=None, tag="", roles=(TRAIN,)):
             p1[~tr] = m1.predict(X[~tr])
         p1[tr] = p1tr[:tr.sum()]
         m1.save_model(mdir / "stage1.txt")
+    n_tr, three = int(tr.sum()), cfg.model.stages >= 3
+    ctab = coherence_table(cfg, split)
+    etab = extra["table"] if extra is not None and cfg.model.coherence else None
     with stage(f"[5/6] stage-2 model{tag} (+ competition features)"):
-        X2 = stage2_matrix(X, ps, pcand, p1, coherence_table(cfg, "train"))
+        X2 = stage2_matrix(X, ps, pcand, p1, ctab)
         del X, Xtr
         X2tr = X2 if tr.all() else X2[tr]
+        X2e = None
         if extra is not None:
-            ctab = extra["table"] if cfg.model.coherence else None
-            X2tr = pd.concat([X2tr, stage2_matrix(model_view(cfg, extra["X"]), extra["s1"], extra["c"], p1tr[tr.sum():],
-                                                  ctab)], ignore_index=True)
+            X2e = stage2_matrix(model_view(cfg, extra["X"]), extra["s1"], extra["c"], p1tr[n_tr:], etab)
+            X2tr = pd.concat([X2tr, X2e], ignore_index=True)
+        p2tr = model.oof(X2tr, ytr, gtr, cfg) if three else None
         m2 = model.fit(X2tr, ytr, cfg)
+        del X2tr
         m2.save_model(mdir / "stage2.txt")
         p2 = m2.predict(X2).astype(np.float32)
     log("stage-2 top features: " + ", ".join(f"{k}={v:.0f}" for k, v in model.importance(m2).head(12).items()))
-    pd.DataFrame({"p1": p1, "p2": p2, "y": y, "role": role}).to_parquet(cfg.paths.work_dir / f"scores_train{tag}.parquet")
-    return m1, m2
+    p = p2
+    if three:
+        with stage(f"[5b/6] stage-3 model{tag} (rivals re-read from out-of-fold stage-2 scores)"):
+            p2_in = p2.copy()
+            p2_in[tr] = p2tr[:n_tr]
+            X3 = stage3_matrix(X2, ps, pcand, p2_in, ctab)
+            del X2
+            X3tr = X3 if tr.all() else X3[tr]
+            if extra is not None:
+                X3tr = pd.concat([X3tr, stage3_matrix(X2e, extra["s1"], extra["c"], p2tr[n_tr:], etab)], ignore_index=True)
+            m3 = model.fit(X3tr, ytr, cfg)
+            del X3tr
+            m3.save_model(mdir / "stage3.txt")
+            p = m3.predict(X3).astype(np.float32)
+        log("stage-3 top features: " + ", ".join(f"{k}={v:.0f}" for k, v in model.importance(m3).head(12).items()))
+    elif (mdir / "stage3.txt").exists():
+        (mdir / "stage3.txt").unlink()                   # a stale stage-3 model must not be picked up by scoring
+    pd.DataFrame({"p1": p1, "p2": p2, "p": p, "y": y, "role": role}).to_parquet(
+        cfg.paths.work_dir / f"scores_train{tag}.parquet")
 
 
 # ----------------------------------------------------------------------------------------------- validation
@@ -198,8 +290,9 @@ def min_prob(cfg) -> float:
 
 
 def _train_scores(cfg, tag=""):
-    s1, cand = load(cfg, "train", ["entity_id", "country"])
-    pairs = candidates(cfg, "train")
+    split = fit_split(cfg)
+    s1, cand = load(cfg, split, ["entity_id", "country"])
+    pairs = candidates(cfg, split)
     ps, pcand = pairs["s1"].to_numpy(), pairs["c"].to_numpy()
     sc = pd.read_parquet(cfg.paths.work_dir / f"scores_train{tag}.parquet")
     y, gt = labels(cfg, s1["entity_id"], cand["entity_id"], ps, pcand)
@@ -211,7 +304,7 @@ def tune_decision(cfg, tag=""):
     """Choose the probability floor of the expected-F0.5 lists on VALID entities and freeze it to decision.json."""
     s1, cand, ps, pcand, sc, y, gt, erole = _train_scores(cfg, tag)
     ents = np.flatnonzero(erole == VALID)
-    p = sc.p2.to_numpy()
+    p = final_prob(sc)
     own = decide.owner(ps, pcand, p)
     grid = {}
     for t in MIN_PROB_GRID:
@@ -231,8 +324,8 @@ def evaluate(cfg, role=VALID, tag="", countries=None, final_only=False):
     Compares fuzzy baseline -> stage-1 model -> + decision layer -> full competitive system, reports slices,
     and writes a pair-level report (confusion matrix, accuracy, P/R/F1, ROC-AUC, PR-AUC, threshold analysis)."""
     s1, cand, ps, pcand, sc, y, gt, erole = _train_scores(cfg, tag)
-    _, cflags = load(cfg, "train", ["f_pseudo", "f_alias", "f_url", "f_script", "f_empty_addr"])
-    X = pair_features(cfg, "train")[["nm_tset", "ad_tset", "num_p_in"]]
+    _, cflags = load(cfg, fit_split(cfg), ["f_pseudo", "f_alias", "f_url", "f_script", "f_empty_addr"])
+    X = pair_features(cfg, fit_split(cfg))[["nm_tset", "ad_tset", "num_p_in"]]
     n = cand.num_rows
     ectry = s1["country"].to_numpy(zero_copy_only=False)
     hold, tr_e = np.flatnonzero(erole == role), np.flatnonzero(erole == TRAIN)
@@ -240,7 +333,7 @@ def evaluate(cfg, role=VALID, tag="", countries=None, final_only=False):
         hold = hold[np.isin(ectry[hold], countries)]
     in_tr = erole[ps] == TRAIN
     name = ROLE_NAMES[role] + tag
-    p1, p2 = sc.p1.to_numpy(), sc.p2.to_numpy()
+    p1, p2, pf = sc.p1.to_numpy(), sc.p2.to_numpy(), final_prob(sc)
 
     def pred(mask):
         return ps[mask], pcand[mask]
@@ -258,7 +351,7 @@ def evaluate(cfg, role=VALID, tag="", countries=None, final_only=False):
 
     with stage(f"evaluation ({name})"):
         systems = {} if final_only else baselines()
-        systems["FINAL stage-2 + ownership + expected-F0.5"] = final_sel = final_decision(cfg, ps, pcand, p2)
+        systems["FINAL last stage + ownership + expected-F0.5"] = final_sel = final_decision(cfg, ps, pcand, pf)
         per = {k: metrics.per_entity(pred(m), gt, hold, n) for k, m in systems.items()}
 
     # entity-level slices (labels used only to *describe* entities, never to predict)
@@ -280,13 +373,13 @@ def evaluate(cfg, role=VALID, tag="", countries=None, final_only=False):
     final = metrics.report(per[list(per)[-1]], slices)
 
     in_eval, n_gt = np.isin(ps, hold), int(np.isin(gt[0], hold).sum())
-    rep = metrics.pair_report(y[in_eval], final_sel[in_eval], p2[in_eval], n_gt)
+    rep = metrics.pair_report(y[in_eval], final_sel[in_eval], pf[in_eval], n_gt)
     rep.update({"entities": int(len(hold)), "macro_F0.5": float(per[list(per)[-1]].F.mean()),
                 "oracle_macro_F0.5": float(metrics.per_entity(pred(y == 1), gt, hold, n).F.mean()),
                 "decision_min_prob": min_prob(cfg)})
-    thr = metrics.threshold_table(y[in_eval], p2[in_eval], n_gt)
-    own = decide.owner(ps, pcand, p2)
-    thr["macro_F0.5 (owner + threshold)"] = [metrics.per_entity(pred(own & (p2 >= t)), gt, hold, n).F.mean()
+    thr = metrics.threshold_table(y[in_eval], pf[in_eval], n_gt)
+    own = decide.owner(ps, pcand, pf)
+    thr["macro_F0.5 (owner + threshold)"] = [metrics.per_entity(pred(own & (pf >= t)), gt, hold, n).F.mean()
                                              for t in thr.index]
     out = cfg.paths.work_dir / "validation"
     out.mkdir(exist_ok=True)
@@ -321,7 +414,7 @@ def boosters(cfg, tag=""):
     d = cfg.paths.work_dir / f"models{tag}"
     if not (d / "stage2.txt").exists():
         return None
-    return lgb.Booster(model_file=str(d / "stage1.txt")), lgb.Booster(model_file=str(d / "stage2.txt"))
+    return tuple(lgb.Booster(model_file=str(d / f"stage{k}.txt")) for k in (1, 2, 3) if (d / f"stage{k}.txt").exists())
 
 
 def score(cfg, split):
@@ -350,9 +443,16 @@ def score(cfg, split):
         return out
     X = model_view(cfg, pair_features(cfg, split))
     p1 = pred(0, X)
-    X2 = stage2_matrix(X, ps, pcand, p1, coherence_table(cfg, split))
+    ctab = coherence_table(cfg, split)
+    X2 = stage2_matrix(X, ps, pcand, p1, ctab)
     del X
-    return ps, pcand, X2, p1, pred(1, X2)
+    p2 = pred(1, X2)
+    if len(base) < 3:
+        return ps, pcand, X2, p1, p2
+    assert len(unl) == 3, "stage-3 model missing for unlabelled countries"
+    X3 = stage3_matrix(X2, ps, pcand, p2, ctab)
+    del X2
+    return ps, pcand, X3, p1, pred(2, X3)
 
 
 def final_decision(cfg, ps, pcand, p):

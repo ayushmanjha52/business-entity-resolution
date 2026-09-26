@@ -12,7 +12,7 @@
 - Each entity's list **maximises expected F0.5** from calibrated probabilities.
 - France has no labels, so we **re-applied the reverse-engineered noise generator** to unlabelled French records to create training data.
 
-Result: macro F0.5 **0.9806** on 220,804 held-out TEST entities scored once after the design was frozen (VALID 0.9806; previous version 0.9678; tuned fuzzy matcher 0.7347).
+Result: macro F0.5 **0.9752** on 220,804 held-out TEST entities scored once after the design was frozen, **at test-like decoy density**. The same entities at plain train density: 0.9783. The previous model scored 0.9552 at test-like density.
 
 ---
 
@@ -34,9 +34,11 @@ Measured on the training data:
 - 31 % of Source-1 businesses share a street with another business, and Source 1 contains many identical names at different addresses (branches).
 - Test differs from train: 15 % France (unseen), more India, and ~5.7 Source-2/3 records per entity vs 4.7 in train.
 
+- **The test split is decoy-heavier than train**, measured without labels on the candidate sets. Records per entity: 5.75 vs 4.68. Hard same-street siblings per entity: US 1.04 → 1.76, India 0.64 → 1.04. True matches per entity are unchanged. A model validated at train density over-states the test score: 0.9806 at train density vs 0.9552 at test-like density.
+
 ### 2.2 Solution Strategy
 **Approach Type:** Hybrid — learned-lexicon normalisation, multi-key blocking, two-stage gradient boosting with competition features, constrained per-entity decision, and self-supervised synthetic data for the unlabelled country.  
-**Core Innovation:** Judging each candidate by the noise operator that produced it and by its rivals, not just by its similarity to the reference. For France, **generator inversion** creates labelled training pairs without any labels, validated by a leave-India-out experiment.
+**Core Innovation:** Training and validating at the test split's measured decoy density (`train_aug`: synthetic sibling decoys thinned per country to the label-free hard-sibling gap). On test-like VALID this lifts macro F0.5 from 0.9552 to 0.9754. Also: Judging each candidate by the noise operator that produced it and by its rivals, not just by its similarity to the reference. For France, **generator inversion** creates labelled training pairs without any labels, validated by a leave-India-out experiment.
 
 ---
 
@@ -83,7 +85,7 @@ Measured on the training data:
   - **competition features** from out-of-fold stage-1 scores: rank, relative score and margin among the entity's candidates; the entity's candidate count, expected match count and look-alike count; rank, count and margin among the entities competing for the same record.
   - **group-coherence features**: the record compared (name, address, shared number) with the entity's most confident other record, plus that record's confidence.
 
-**Model type:** LightGBM (MIT), two stages, 127 leaves, learning rate 0.06, 600 trees. Chosen on VALID pairs against logistic regression (ROC-AUC 0.9768), random forest (0.9973), ExtraTrees (0.9964) and other LightGBM sizes (0.9987–0.9988). Stage 1 uses pairwise features with 2-fold out-of-fold scores by entity; stage 2 uses pairwise + competition features. There are two model sets: real labels for US/India, and real labels + synthetic France for France. Development models train on TRAIN entities (50 %); the submission models are refit on every labelled entity once the design is frozen.
+**Model type:** LightGBM (MIT), two stages (a third stage was tried and was not robust), trained on `train_aug` (real pairs + calibrated synthetic sibling decoys), 127 leaves, learning rate 0.06, 600 trees. Chosen on VALID pairs against logistic regression (ROC-AUC 0.9768), random forest (0.9973), ExtraTrees (0.9964) and other LightGBM sizes (0.9987–0.9988). Stage 1 uses pairwise features with 2-fold out-of-fold scores by entity; stage 2 uses pairwise + competition features. There are two model sets: real labels for US/India, and real labels + synthetic France for France. Development models train on TRAIN entities (50 %); the submission models are refit on every labelled entity once the design is frozen.
 
 **Threshold selection method:** No global threshold.
 1. Each Source-2/3 record goes to its highest-probability entity.
@@ -95,8 +97,8 @@ Probabilities are calibrated, within about 0.01–0.03 per bin. The only free pa
 
 ## 5. Results & Error Analysis
 
-- **F_0.5 Score (macro):** **0.9806** on 220,804 TEST entities that were never used for any choice (US 0.9852, India 0.9736). VALID (selection set): 0.9806. Previous version: 0.9678. The tuned fuzzy baseline scores 0.7347 and stage-1 with a global threshold scores 0.9757.
-- **Pair level (TEST):** precision 0.9953, recall 0.9539 (blocking misses counted), F1 0.9742, ROC-AUC 0.9992, PR-AUC 0.9985. TP 728,070, FP 3,420, TN 1,113,331, FN 35,155 (19,335 in candidates + 15,820 lost in blocking).
+- **F_0.5 Score (macro):** **0.9752** on 220,804 TEST entities at test-like density (US 0.9794, India 0.9688). VALID (selection set, test-like): 0.9754. Previous model at test-like density: 0.9552. Tuned fuzzy baseline: 0.6529.
+- **Pair level (TEST, test-like):** precision 0.9921, recall 0.9462 (blocking misses counted), F1 0.9686, ROC-AUC 0.9986, PR-AUC 0.9969. TP 722,171, FP 5,758, TN 1,391,647, FN 41,054 (25,211 in candidates + 15,843 lost in blocking).
 - **Leakage control:** entity-level split; the lexicon is learned from TRAIN-role labels only (fixed in this version); stage-2 inputs use out-of-fold stage-1 scores; the decision floor is frozen on VALID; TEST is scored once. Unlabelled-country test (India treated as unlabelled): 0.9098 with US labels only, **0.9193** adding synthetic data, 0.9513 with real labels.
 - **Common false positives (wrong merges):**
   - look-alike decoys whose shifted number is not visible (India addresses carry several numbers): singleton false-merge rate 2.5 % (was 4.5 %);
@@ -110,7 +112,7 @@ Probabilities are calibrated, within about 0.01–0.03 per bin. The only free pa
 ---
 
 ## 6. Conclusion
-The data was generated by a noise process whose negatives are look-alikes and whose hardest positives look least alike. Modelling the operators and the competition between candidates, rather than tuning a similarity threshold, lifts macro F0.5 from 0.73 to 0.981 on held-out entities.
+The data was generated by a noise process whose negatives are look-alikes and whose hardest positives look least alike. Modelling the operators and the competition between candidates, rather than tuning a similarity threshold, lifts macro F0.5 from 0.65 to 0.975 on held-out entities at the test split's decoy density.
 
 Everything runs on a 16 GB CPU machine: largest measured peak 12.9 GB (final refit); full runtime in the README benchmark. Every normalisation resource is learned from the provided files, and the unlabelled country is handled with validated self-supervision.
 

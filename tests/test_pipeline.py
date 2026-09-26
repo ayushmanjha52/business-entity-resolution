@@ -7,9 +7,11 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import pytest
 import pandas as pd
 
 from doppelganger import config, pipeline, synth
+from doppelganger.__main__ import _final
 
 ROOT = Path(__file__).resolve().parents[1]
 STREETS = ["Oak", "Pine", "Maple", "Cedar", "Elm", "Birch", "Walnut", "Spruce", "Willow", "Aspen"]
@@ -51,7 +53,8 @@ def _write_split(d: Path, split, s1, gen):
         gt.to_csv(d / "train" / "train_ground_truth.tsv", sep="\t", index=False)
 
 
-def test_end_to_end(tmp_path):
+@pytest.mark.parametrize("augment", [False, True])
+def test_end_to_end(tmp_path, monkeypatch, augment):
     rng = np.random.default_rng(1)
     gen = synth.Generator(_profile(), 3)
     data = tmp_path / "dataset"
@@ -65,6 +68,10 @@ def test_end_to_end(tmp_path):
     cfg.split.valid_frac, cfg.split.test_frac, cfg.split.train_frac = 0.2, 0.2, 0.6
     cfg.model.n_estimators, cfg.model.min_child_samples = 60, 10
     cfg.lexicon.component_min_count = 5
+    cfg.split.decoy_augment = augment
+    if augment:                                                  # fixture splits share one density: force +1 decoy
+        from doppelganger import augment as aug
+        monkeypatch.setattr(aug, "extra_decoys_per_entity", lambda cfg: 1.0)
 
     pipeline.blocking_report(cfg)
     pipeline.train(cfg)
@@ -74,6 +81,7 @@ def test_end_to_end(tmp_path):
     assert test.loc["ALL", "F0.5"] > 0.8                        # unseen TEST entities, frozen decision
     assert final.loc["ALL", "F0.5"] > 0.8                       # sanity: the model learned something real
     assert comp.loc[comp.index[-1], "ALL"] >= comp.loc[comp.index[0], "ALL"]   # final >= fuzzy baseline
+    _final(cfg)                                                 # refit + synthetic + self-training round
     pipeline.predict(cfg)
 
     out = cfg.paths.output_dir

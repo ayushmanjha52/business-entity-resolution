@@ -51,8 +51,8 @@ def build(cfg, test_sample=60_000):
         s1, cand = pipeline.load(cfg, "train", ["entity_id"])
         pairs = pipeline.candidates(cfg, "train")         # holdout: exactly the scores validation measured
         ps, pcand = pairs["s1"].to_numpy(), pairs["c"].to_numpy()
-        sc = pd.read_parquet(cfg.paths.work_dir / "scores_train.parquet")
-        p1, p2, y = sc.p1.to_numpy(), sc.p2.to_numpy(), sc.y.to_numpy()
+        sc = pd.read_parquet(cfg.paths.work_dir / "scores_train.parquet").iloc[:len(ps)]   # real pairs come first
+        p1, p2, y = sc.p1.to_numpy(), pipeline.final_prob(sc), sc.y.to_numpy()   # p2 = last-stage probability
         X2 = pipeline.stage2_matrix(pipeline.pair_features(cfg, "train"), ps, pcand, p1,
                                     pipeline.coherence_table(cfg, "train"))
         role = pipeline.split_roles(cfg, s1["entity_id"].to_numpy(zero_copy_only=False))

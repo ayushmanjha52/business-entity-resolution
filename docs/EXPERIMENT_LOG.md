@@ -42,9 +42,22 @@ Unless noted, scores are macro F0.5 on the 10 % Source-1 validation holdout (220
 | 23 | Model comparison on VALID pairs (LogReg, RF, ExtraTrees, 3 LightGBM sizes) | ROC-AUC 0.9768 / 0.9973 / 0.9964 / 0.9987–0.9988 | LightGBM 127 leaves |
 | 24 | One-time TEST evaluation | macro F0.5 **0.9806** (P 0.9953, R 0.9539, ROC-AUC 0.9992) | matches VALID |
 
+| 25 | Leaderboard feedback: v3 file scored ~0.970 against 0.9806 on US/India TEST | the gap is not France alone (see #30) | — |
+| 26 | French-aware normalisation (Allée/Cours/Route…, French function words, floor noise) | first version lost 0.0008 on US/India VALID: stop words `n` (canonical "North"), `d`, `l` (initials, block letters) | those three removed; rest kept; US/India VALID back to 0.9806 (two-stage) |
+| 27 | Decision layer: prefix sums in float32 over millions of pairs | owned pairs with p ≈ 0.8 dropped from lists; fixed with float64: +0.0001 | **fixed** |
+| 28 | Third stage (rivals from out-of-fold stage-2 scores) | +0.0009 (experiment), −0.0005 (pipeline run) | not robust: `model.stages = 2` |
+| 29 | Self-training for unlabelled countries, India treated as unlabelled | India VALID 0.9392 → **0.9424** (singleton false merges 8.8 % → 7.9 %) | **kept** for France |
+| 30 | Label-free comparison of candidate sets | test has 5.75 records/entity vs 4.68; hard same-street siblings/entity US 1.04 → 1.76, India 0.64 → 1.04; true matches/entity unchanged | test is decoy-heavier |
+| 31 | Stress test: plain model on VALID + synthetic decoys at the raw +1.07/entity gap | 0.9806 → 0.9466 (synthetic decoys are all hard siblings: too many) | calibrate instead |
+| 32 | Decoys thinned per country to the measured hard-sibling gap (US keep 93.8 %, India 52.3 %) | plain model on test-like VALID: **0.9552** (P 0.9645, singleton false merges 11.3 %) | test-like VALID adopted |
+| 33 | **Train on test-like train_aug** | test-like VALID 0.9552 → **0.9754** (P 0.9916); plain VALID 0.9806 → 0.9783 | **kept (v4)** |
+| 34 | One-time TEST, test-like (frozen v4 design) | macro F0.5 **0.9752** (P 0.9921, R 0.9462, ROC-AUC 0.9986) | matches VALID |
+
 ## Negative or neutral results (kept for honesty)
 - Stage-2 gain importance ranks the noise flags near zero, but removing them costs 0.0007 F0.5. Gain importance under-reports features that act in rare but decisive cases.
 - The synthetic block closes only about 23 % of the gap to real labels in the leave-India-out test (0.9098 → 0.9193 vs 0.9513). Operators specific to the unlabelled country cannot be generated if they are never observed.
 - Adding the synthetic block to the shared model costs the labelled countries 0.0009. This is why the final system routes by country.
 - LightGBM with 255 leaves / 800 trees scored best F1 0.9799 vs 0.9798 for 127 leaves at twice the fit time: not adopted.
 - The v2 decision-floor ablation (0.05 vs none) and the v3 grid agree: the floor barely matters once probabilities are calibrated.
+- A third stage looked like +0.0009 in isolation but lost 0.0005 in the next full run: within noise, so the simpler two-stage model stays.
+- Plain-density validation over-stated test performance by about 0.025 because the test candidate sets are more crowded with hard siblings; every v4 number is test-like.

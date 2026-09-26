@@ -36,7 +36,7 @@ def build_profile(cfg, sources: list, split: str, target: str) -> synth.Profile:
     # decoy house-number shifts: non-matching look-alike candidates in the source countries
     pairs = pipeline.candidates(cfg, "train")
     X = pipeline.pair_features(cfg, "train")[["nm_tset", "num_p_in", "num_logdiff"]]
-    y = pd.read_parquet(cfg.paths.work_dir / "scores_train.parquet", columns=["y"]).y.to_numpy()
+    y, _ = pipeline.labels(cfg, s1["entity_id"], cand["entity_id"], pairs["s1"].to_numpy(), pairs["c"].to_numpy())
     m = (y == 0) & (X.nm_tset.values >= 85) & (X.num_p_in.values == 0) & np.isin(ctry[pairs["s1"].to_numpy()], sources)
     delta = np.rint(np.expm1(X.num_logdiff.values[m & np.isfinite(X.num_logdiff.values)]))
     delta = delta[(delta >= 1) & (delta <= 500)]
@@ -78,8 +78,51 @@ def synthetic_block(cfg, prof, split, country, seed_rows=None, tag="SYN"):
         found[cr[y == 1]] = True
         log(f"  {len(df):,} synthetic records ({decoy.mean():.0%} decoys) -> {len(y):,} pairs, "
             f"{y.mean():.1%} positive, synthetic blocking recall {found[pos].mean():.3f}")
-    return {"X": X, "y": y, "s1": ps.astype(np.int64), "c": cr.astype(np.int64), "records": df,
+    return {"X": X, "y": y, "s1": ps.astype(np.int64), "c": cr.astype(np.int64),
             "table": c.select(features.COHERENCE_COLS)}
+
+
+PSEUDO_S1_OFFSET = 1 << 30   # keeps pseudo-labelled groups apart from synthetic groups seeded by the same entity
+
+
+def pseudo_block(cfg, split, country, p2):
+    """Self-training block: real candidate pairs of `country`, labelled by the current model's own decision.
+
+    Only entities whose every candidate is confidently decided (p >= hi or p <= lo) are used, so competition
+    groups stay complete and pseudo-label noise stays small. No true labels are read."""
+    sp = cfg.synth
+    s1, _ = pipeline.load(cfg, split, ["country"])
+    pairs = pipeline.candidates(cfg, split)
+    ps, pcand = pairs["s1"].to_numpy(), pairs["c"].to_numpy()
+    sel = pipeline.final_decision(cfg, ps, pcand, p2)
+    unsure = np.bincount(ps, weights=((p2 < sp.pseudo_hi) & (p2 > sp.pseudo_lo)), minlength=s1.num_rows)
+    has = np.bincount(ps, minlength=s1.num_rows) > 0
+    ctry = s1["country"].to_numpy(zero_copy_only=False)
+    ents = np.flatnonzero((ctry == country) & has & (unsure == 0))
+    rng = np.random.default_rng(cfg.seed)
+    ents = rng.choice(ents, min(sp.pseudo_entities, len(ents)), replace=False)
+    m = np.isin(ps, ents)
+    X = pipeline.model_view(cfg, pipeline.pair_features(cfg, split))[m].reset_index(drop=True)
+    y = (sel[m] & (p2[m] >= sp.pseudo_hi)).astype(np.int8)
+    log(f"  pseudo-labelled block ({country}, {split}): {len(ents):,} confident entities -> {m.sum():,} pairs, "
+        f"{y.mean():.1%} positive")
+    return {"X": X, "y": y, "s1": ps[m].astype(np.int64) + PSEUDO_S1_OFFSET, "c": pcand[m].astype(np.int64),
+            "table": pipeline.load(cfg, split, features.COHERENCE_COLS)[1]}
+
+
+def merge_blocks(blocks):
+    """Concatenate training blocks; candidate ids are offset so each block indexes its own coherence table."""
+    blocks = [b for b in blocks if b is not None]
+    if not blocks:
+        return None
+    off = 0
+    for b in blocks:
+        b["c"] = b["c"] + off
+        off += b["table"].num_rows
+    out = {k: np.concatenate([b[k] for b in blocks]) for k in ("y", "s1", "c")}
+    out["X"] = pd.concat([b["X"] for b in blocks], ignore_index=True)
+    out["table"] = pa.concat_tables([b["table"].select(features.COHERENCE_COLS) for b in blocks])
+    return out
 
 
 def loco_experiment(cfg):
@@ -97,6 +140,11 @@ def loco_experiment(cfg):
     if not done("_locoB"):
         pipeline.train(cfg, extra=extra, countries=["US"], tag="_locoB")
     res["B: US labels + synthetic India"] = pipeline.validate(cfg, "_locoB", ["India"], final_only=True)[1]
+    if not done("_locoS"):
+        p2 = pipeline.final_prob(pd.read_parquet(cfg.paths.work_dir / "scores_train_locoB.parquet"))
+        both = merge_blocks([synthetic_block(cfg, prof, "train", "India", seeds), pseudo_block(cfg, "train", "India", p2)])
+        pipeline.train(cfg, extra=both, countries=["US"], tag="_locoS")
+    res["S: + self-training on India (no labels)"] = pipeline.validate(cfg, "_locoS", ["India"], final_only=True)[1]
     res["C: real India labels (upper bound)"] = pipeline.validate(cfg, "", ["India"], final_only=True)[1]
     table = pd.DataFrame({k: v.loc["ALL"] for k, v in res.items()}).T
     table.to_csv(cfg.paths.work_dir / "validation" / "loco_india.csv")
@@ -104,21 +152,15 @@ def loco_experiment(cfg):
     return table
 
 
-def france_block(cfg):
-    """Synthetic training block for every test country without training labels (France in this challenge)."""
+def france_block(cfg, p2=None):
+    """Training block for every test country without training labels (France in this challenge): synthetic
+    records, plus (given test pair scores p2 from a first-round model) a self-training block."""
     s1_tr, _ = pipeline.load(cfg, "train", ["country"])
     s1_te, _ = pipeline.load(cfg, "test", ["country"])
     labelled = sorted(set(s1_tr["country"].to_numpy(zero_copy_only=False)))
     targets = sorted(set(s1_te["country"].to_numpy(zero_copy_only=False)) - set(labelled))
     blocks = [synthetic_block(cfg, build_profile(cfg, labelled, "test", t), "test", t, tag=f"SYN{t[:2].upper()}")
               for t in targets]
-    if not blocks:
-        return None
-    off = 0
-    for b in blocks:            # keep synthetic record ids unique across countries (offset = table length)
-        b["c"] = b["c"] + off
-        off += b["table"].num_rows
-    out = {k: (pd.concat([b[k] for b in blocks], ignore_index=True) if k in ("X", "records")
-               else np.concatenate([b[k] for b in blocks])) for k in ("X", "y", "s1", "c", "records")}
-    out["table"] = pa.concat_tables([b["table"] for b in blocks])
-    return out
+    if p2 is not None:
+        blocks += [pseudo_block(cfg, "test", t, p2) for t in targets]
+    return merge_blocks(blocks)

@@ -34,6 +34,7 @@ num_del_key = true       # Source-1 number with one digit deleted (the commonest
 valid_frac = 0.10        # Source-1 entities for model / feature / decision selection
 test_frac = 0.10         # Source-1 entities scored once, at the end (never used for any choice)
 train_frac = 0.50        # development-model training entities (the final model refits on every labelled entity)
+decoy_augment = true     # train and evaluate on train_aug: + synthetic sibling decoys at test-like density
 
 [model]
 num_leaves = 127
@@ -44,14 +45,19 @@ subsample = 0.7
 colsample_bytree = 0.8
 exclude = []             # feature-store columns hidden from the models (ablation-driven)
 coherence = true         # group-coherence features (record vs the entity's most confident other record)
-folds = 2                # out-of-fold stage-1 scores for the stage-2 (competition) model
+folds = 2                # out-of-fold scores feeding the next stage
+stages = 2               # 3 = re-read rivals from out-of-fold stage-2 scores (not robust: +0.0009 in one run, -0.0005 in the next)
 
 [decision]
 min_prob = 0.0           # optional floor; probabilities are calibrated (holdout reliability within ~0.01), so none is needed
 
 [synth]
 enabled = true          # add the generator-inversion block for unlabelled countries when training
-max_entities = 150000     # Source-1 seeds per unlabelled country (rates & decoy density are measured, not configured)
+max_entities = 150000    # Source-1 seeds per unlabelled country (rates & decoy density are measured, not configured)
+self_training = true     # second round for unlabelled countries: + real pairs pseudo-labelled by the first-round model
+pseudo_hi = 0.95         # a pair counts as confidently matched at p >= pseudo_hi ...
+pseudo_lo = 0.05         # ... and confidently rejected at p <= pseudo_lo; only fully confident entities are used
+pseudo_entities = 150000 # cap on pseudo-labelled entities per country
 
 [explorer]
 host = "127.0.0.1"
