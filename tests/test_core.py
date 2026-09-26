@@ -174,3 +174,15 @@ def test_rarity_overlap_prefers_rare_shared_tokens():
     assert o["nm_cov1"][0] == pytest.approx(0.5) and o["nm_cov2"][0] == pytest.approx(1.0)
     assert o["nm_cov2"][1] < 1.0                                         # unknown cand token counts against it
     assert list(r.name_count(s1)) == [2, 2, 1]
+
+
+def test_cross_source_fill_adds_missing_source_only():
+    # entity 0 has only a Source-2 match; its best free Source-3 record (p 0.6) joins, the weaker one (0.4) does not
+    s1 = np.array([0, 0, 0, 1, 1])
+    c = np.array([0, 1, 2, 3, 4])
+    p = np.array([0.95, 0.6, 0.4, 0.9, 0.8])
+    src3 = np.array([False, True, True, False, True])
+    sel = np.array([True, False, False, True, True])
+    out = decide.cross_source_fill(s1, c, p, sel, src3, 0.5)
+    assert out.tolist() == [True, True, False, True, True]
+    assert decide.cross_source_fill(s1, c, p, sel, src3, 0.7).tolist() == sel.tolist()

@@ -64,6 +64,12 @@ Unless noted, scores are macro F0.5 on the 10 % Source-1 validation holdout (220
 | 40 | Leaderboard probe: France scored by mean of French and US/India models | same leaderboard score as 0.9709 | file unchanged |
 | 41 | XGBoost and CatBoost vs LightGBM (stage-1 features, 1M TRAIN pairs -> VALID pairs) | best F1 0.9797 (XGBoost) / 0.9790 (CatBoost) vs 0.9797 (LightGBM) | no rebuild: no gain |
 
+| 42 | Task 1: blocking misses by cause (157,614 train / 15,781 VALID) | shares a name token 86.6 %, address-only 9.8 %, native script 2.2 %, abbreviation 1.4 %, no shared token 0.1 %; misses with an address share address tokens (~100 %) and the house number (75-86 %) but were ranked out of the top 8 | ranking, not retrieval, is the gap |
+| 43 | Task 1: re-rank the pre-cut pool by votes + address evidence (top 8) vs wider cut (400k sampled records / country) | re-rank: recall -0.0007 to +0.0016 with +27-160 % pairs; top-16: VALID recall India +0.0055, US +0.0020, +25 % pairs | re-rank rejected; wider cut deferred (full rebuild) |
+| 44 | Task 2: second-chance ownership (record rejected by its owner offered to the next entity) | VALID plain -0.00007, test-like -0.00002 | rejected |
+| 45 | Task 2: one record per source per entity | labels: 51 % (S2) / 55 % (S3) of entities have several | rejected without running |
+| 46 | Task 2: cross-source fill (single-source list gets its best free other-source record at p >= t) | t=0.5: VALID plain 0.97826 -> 0.97862, TEST plain 0.97816 -> 0.97856; test-like +0.00006 / +0.00007 | **kept** (`decision.cross_source_min_prob = 0.5`) |
+
 ## Negative or neutral results (kept for honesty)
 - Stage-2 gain importance ranks the noise flags near zero, but removing them costs 0.0007 F0.5. Gain importance under-reports features that act in rare but decisive cases.
 - The synthetic block closes only about 23 % of the gap to real labels in the leave-India-out test (0.9098 → 0.9193 vs 0.9513). Operators specific to the unlabelled country cannot be generated if they are never observed.

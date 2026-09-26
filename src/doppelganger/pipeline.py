@@ -4,6 +4,7 @@ import json
 import numpy as np
 import pandas as pd
 import pyarrow as pa
+import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
 from . import blocking, decide, features, io, lexicon, metrics, model
@@ -351,7 +352,8 @@ def evaluate(cfg, role=VALID, tag="", countries=None, final_only=False):
 
     with stage(f"evaluation ({name})"):
         systems = {} if final_only else baselines()
-        systems["FINAL last stage + ownership + expected-F0.5"] = final_sel = final_decision(cfg, ps, pcand, pf)
+        systems["FINAL last stage + ownership + expected-F0.5"] = final_sel = final_decision(cfg, ps, pcand, pf,
+                                                                                             source3(cand))
         per = {k: metrics.per_entity(pred(m), gt, hold, n) for k, m in systems.items()}
 
     # entity-level slices (labels used only to *describe* entities, never to predict)
@@ -457,10 +459,19 @@ def score(cfg, split):
     return ps, pcand, Xs, p1, p
 
 
-def final_decision(cfg, ps, pcand, p):
+def source3(cand) -> np.ndarray:
+    """Per candidate record: True for Source 3, False for Source 2 (from the id prefix)."""
+    return pc.starts_with(cand["entity_id"], "S3").to_numpy(zero_copy_only=False)
+
+
+def final_decision(cfg, ps, pcand, p, src3=None):
+    """Ownership + expected-F0.5 lists, then (when src3 is given) the cross-source fill."""
     own = decide.owner(ps, pcand, p)
     sel = np.zeros(len(p), bool)
     sel[own] = decide.select(ps[own], p[own], min_prob(cfg))
+    t = getattr(cfg.decision, "cross_source_min_prob", 0.0)
+    if src3 is not None and t > 0:
+        sel = decide.cross_source_fill(ps, pcand, p, sel, src3, t)
     return sel
 
 
@@ -469,7 +480,7 @@ def predict(cfg):
     with stage("[5/6] scoring test candidates"):
         ps, pcand, X2, p1, p2 = score(cfg, "test")
     with stage("[6/6] ownership + expected-F0.5 match lists"):
-        sel = final_decision(cfg, ps, pcand, p2)
+        sel = final_decision(cfg, ps, pcand, p2, source3(cand))
     s1_ids, c_ids = s1["entity_id"].to_numpy(zero_copy_only=False), cand["entity_id"].to_numpy(zero_copy_only=False)
     out = cfg.paths.output_dir
     io.write_lists(out / "candidate_pairs.tsv", s1_ids, ps, pcand, c_ids, ["source1_entity_id", "candidate_entity_ids"])

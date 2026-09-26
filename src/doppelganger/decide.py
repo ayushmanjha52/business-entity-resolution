@@ -40,6 +40,27 @@ def select(s1, p, min_prob=0.0, beta2=0.25) -> np.ndarray:
     return mask
 
 
+def cross_source_fill(s1, c, p, sel, src3, min_prob) -> np.ndarray:
+    """Add the best other-source record to entities whose list holds a single source.
+
+    80 % of labelled entities are matched in both Source 2 and Source 3, only 14 % in exactly one, so a list
+    with one source usually misses a record. The best still-unassigned record of the missing source joins the
+    list when its probability is at least min_prob (0.5 chosen on VALID: +0.0004 on VALID and TEST)."""
+    rec_src3 = src3[c]
+    lists = pd.DataFrame({"s": s1[sel], "s3": rec_src3[sel]}).groupby("s").s3.agg(["min", "max"])
+    single = lists[lists["min"] == lists["max"]]
+    missing_s3 = pd.Series(~single["max"].astype(bool), index=single.index)
+    taken = np.zeros(c.max() + 1, bool)
+    taken[c[sel]] = True
+    m = np.isin(s1, single.index) & ~taken[c] & (p >= min_prob)
+    m &= rec_src3 == missing_s3.reindex(s1).fillna(False).to_numpy(bool)
+    out = sel.copy()
+    if m.any():
+        d = pd.DataFrame({"i": np.flatnonzero(m), "s": s1[m], "c": c[m], "p": p[m]}).sort_values("p", ascending=False)
+        out[d.drop_duplicates("c").drop_duplicates("s").i.to_numpy()] = True    # one per entity, each record once
+    return out
+
+
 def threshold(s1, c, p, t) -> np.ndarray:
     """Baseline decision: independent global threshold (no ownership, no per-entity optimisation)."""
     return p >= t

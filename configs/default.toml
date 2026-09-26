@@ -50,6 +50,7 @@ stages = 2               # 3 = re-read rivals from out-of-fold stage-2 scores (n
 
 [decision]
 min_prob = 0.0           # optional floor; probabilities are calibrated (holdout reliability within ~0.01), so none is needed
+cross_source_min_prob = 0.5  # entity list with one source: add the best other-source record at p >= this (VALID +0.0004; 0 = off)
 
 [synth]
 enabled = true          # add the generator-inversion block for unlabelled countries when training

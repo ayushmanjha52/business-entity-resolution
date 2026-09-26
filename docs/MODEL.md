@@ -37,5 +37,8 @@ Candidate pairs never cross countries, so routing does not mix competition group
    - A Monte-Carlo estimate of the exact expectation gave 0.9676 vs 0.9677 for the closed form.
    - Probability floor: searched on VALID over 0–0.5 and frozen at 0.5 (`artifacts/decision.json`). It is nearly inert (0.98052 → 0.98056) because the probabilities are calibrated.
 
+3. **Cross-source fill** (`decide.cross_source_fill`, `decision.cross_source_min_prob = 0.5`): 80 % of labelled entities are matched in both Source 2 and Source 3 and only 14 % in exactly one, so a list that holds a single source usually misses a record. The best still-unassigned record of the missing source joins the list when p ≥ 0.5 (chosen on VALID; VALID 0.97826 → 0.97862, TEST 0.97816 → 0.97856 at plain density).
+   - Rejected alternatives: second-chance ownership (−0.00007) and one record per source (false for half the entities).
+
 ## Artefacts
 `artifacts/models*/stage{1,2}.txt` (LightGBM text format), `artifacts/scores_train*.parquet` (p1, p2, label, role per train pair), `artifacts/scores_test.parquet`.

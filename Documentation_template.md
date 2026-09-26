@@ -90,6 +90,7 @@ Measured on the training data:
 **Threshold selection method:** No global threshold.
 1. Each Source-2/3 record goes to its highest-probability entity.
 2. Each entity's list is the probability-sorted prefix that maximises expected F0.5, `1.25·Σtop-k p / (k + 0.25·Σp)`, against `Π(1−p)` for the empty list.
+3. Cross-source fill: an entity whose list holds records of a single source gets its best unassigned record of the other source when p ≥ 0.5 (80 % of entities are matched in both sources). Chosen on VALID (+0.0004) and confirmed on TEST (+0.0004).
 
 Probabilities are calibrated, within about 0.01–0.03 per bin. The only free parameter, a probability floor under this rule, was searched on VALID (0–0.5) and frozen at 0.5; it is nearly inert (0.98052 → 0.98056). It beats the best plain global threshold (0.9803 at 0.7).
 
