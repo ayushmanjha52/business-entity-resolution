@@ -55,6 +55,8 @@ Unless noted, scores are macro F0.5 on the 10 % Source-1 validation holdout (220
 
 | 35 | Stage-2 variants on test-like VALID (v4): 255 leaves / lr 0.04 / 1000 trees; min_child 20 / 800 trees; bag of 3 seeds; average of variants | 0.9751; 0.9741; 0.9756; 0.9755 vs 0.9754 | no change: all within noise |
 
+| 36 | Remaining blocking misses (80k sampled of 157,614) | 2 % share no key; raising the cap to 300 / 500 / 1000 recovers 6.3 % / 9.5 % / 12.8 %; the rest share a selective key but rank below the top 8 (recall: top-6 0.9777, top-8 0.9794) | wider blocking judged ~+0.001: not run |
+
 ## Negative or neutral results (kept for honesty)
 - Stage-2 gain importance ranks the noise flags near zero, but removing them costs 0.0007 F0.5. Gain importance under-reports features that act in rare but decisive cases.
 - The synthetic block closes only about 23 % of the gap to real labels in the leave-India-out test (0.9098 → 0.9193 vs 0.9513). Operators specific to the unlabelled country cannot be generated if they are never observed.
