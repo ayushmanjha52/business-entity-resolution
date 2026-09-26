@@ -417,42 +417,44 @@ def boosters(cfg, tag=""):
     return tuple(lgb.Booster(model_file=str(d / f"stage{k}.txt")) for k in (1, 2, 3) if (d / f"stage{k}.txt").exists())
 
 
+def _predict(model, X: pd.DataFrame) -> np.ndarray:
+    assert model.feature_name() == list(X.columns), "feature order mismatch between model and feature store"
+    return model.predict(X.to_numpy(np.float32)).astype(np.float32)
+
+
+def _run(models, X, ps, pcand, ctab):
+    """(stage-1 probability, last-stage probability, last feature matrix) of every pair under one model set."""
+    p1 = _predict(models[0], X)
+    Xs = stage2_matrix(X, ps, pcand, p1, ctab)
+    p = _predict(models[1], Xs)
+    if len(models) > 2:
+        Xs = stage3_matrix(Xs, ps, pcand, p, ctab)
+        p = _predict(models[2], Xs)
+    return p1, p, Xs
+
+
 def score(cfg, split):
-    """(pairs, X2, p1, p2) for a split. Pairs of countries that had no training labels are scored by the
-    synthetic-augmented models; labelled countries by the models trained on real labels only.
-    Candidate pairs never cross countries, so competition features are unaffected by the routing."""
+    """(pairs, last feature matrix, p1, p) for a split.
+
+    Labelled countries are scored by the models trained on real labels. Countries without training labels get
+    w * (synthetic/self-trained model) + (1 - w) * (labelled model), w = synth.unlabelled_weight. Candidate pairs
+    never cross countries, so each country's competition features are complete under either model set."""
     pairs = candidates(cfg, split)
     ps, pcand = pairs["s1"].to_numpy(), pairs["c"].to_numpy()
     s1, _ = load(cfg, split, ["country"])
     route = ~np.isin(s1["country"].to_numpy(zero_copy_only=False)[ps], labelled_countries(cfg))
     base, unl = boosters(cfg, FINAL) or boosters(cfg), boosters(cfg, FINAL + UNLABELLED) or boosters(cfg, UNLABELLED)
-    if unl is None or not route.any():
-        unl, route = base, np.zeros(len(ps), bool)
-    log(f"{split}: {(~route).sum():,} pairs scored by the labelled-country model, {route.sum():,} by the unlabelled-country model")
-
-    # pairs are generated country by country, so each model scores contiguous runs: numpy views, no copies
-    cuts = np.r_[0, np.flatnonzero(np.diff(route)) + 1, len(route)]
-
-    def pred(i, X):
-        names, A = list(X.columns), X.to_numpy(np.float32)
-        out = np.empty(len(A), np.float32)
-        for a, b in zip(cuts[:-1], cuts[1:]):
-            m = (unl if route[a] else base)[i]
-            assert m.feature_name() == names, "feature order mismatch between model and feature store"
-            out[a:b] = m.predict(A[a:b])
-        return out
-    X = model_view(cfg, pair_features(cfg, split))
-    p1 = pred(0, X)
+    w = float(getattr(cfg.synth, "unlabelled_weight", 1.0)) if unl is not None else 0.0
     ctab = coherence_table(cfg, split)
-    X2 = stage2_matrix(X, ps, pcand, p1, ctab)
-    del X
-    p2 = pred(1, X2)
-    if len(base) < 3:
-        return ps, pcand, X2, p1, p2
-    assert len(unl) == 3, "stage-3 model missing for unlabelled countries"
-    X3 = stage3_matrix(X2, ps, pcand, p2, ctab)
-    del X2
-    return ps, pcand, X3, p1, pred(2, X3)
+    X = model_view(cfg, pair_features(cfg, split))
+    p1, p, Xs = _run(base, X, ps, pcand, ctab)
+    if route.any() and w > 0:
+        r = np.flatnonzero(route)
+        _, pu, _ = _run(unl, X.iloc[r].reset_index(drop=True), ps[r], pcand[r], ctab)
+        p[r] = w * pu + (1 - w) * p[r]
+    log(f"{split}: {(~route).sum():,} pairs scored by the labelled-country model, {route.sum():,} unlabelled-country "
+        f"pairs by {w:.2f} x unlabelled model + {1 - w:.2f} x labelled model")
+    return ps, pcand, Xs, p1, p
 
 
 def final_decision(cfg, ps, pcand, p):

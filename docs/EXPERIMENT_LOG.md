@@ -57,6 +57,10 @@ Unless noted, scores are macro F0.5 on the 10 % Source-1 validation holdout (220
 
 | 36 | Remaining blocking misses (80k sampled of 157,614) | 2 % share no key; raising the cap to 300 / 500 / 1000 recovers 6.3 % / 9.5 % / 12.8 %; the rest share a selective key but rank below the top 8 (recall: top-6 0.9777, top-8 0.9794) | wider blocking judged ~+0.001: not run |
 
+| 37 | Leaderboard: v4 file 0.9709 (v3 ~0.970) | the test-like gain (+0.020 locally) did not show up: real test siblings are easier than the synthetic ones | — |
+| 38 | France label-free check: numberless look-alikes (true 99.5 % in US) predicted only 75.7 % in France | suspected a France recall leak | investigated (#39) |
+| 39 | France scored by A = French model, B = labelled US/India model, C = mean | matches/entity 3.359 / 3.358 / 3.334; numberless look-alikes predicted 75.7 % / 72.7 % / 74.6 % | the models agree: no leak; file unchanged (`synth.unlabelled_weight` = 1.0) |
+
 ## Negative or neutral results (kept for honesty)
 - Stage-2 gain importance ranks the noise flags near zero, but removing them costs 0.0007 F0.5. Gain importance under-reports features that act in rare but decisive cases.
 - The synthetic block closes only about 23 % of the gap to real labels in the leave-India-out test (0.9098 → 0.9193 vs 0.9513). Operators specific to the unlabelled country cannot be generated if they are never observed.

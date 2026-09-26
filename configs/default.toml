@@ -58,6 +58,7 @@ self_training = true     # second round for unlabelled countries: + real pairs p
 pseudo_hi = 0.95         # a pair counts as confidently matched at p >= pseudo_hi ...
 pseudo_lo = 0.05         # ... and confidently rejected at p <= pseudo_lo; only fully confident entities are used
 pseudo_entities = 150000 # cap on pseudo-labelled entities per country
+unlabelled_weight = 1.0  # unlabelled-country pairs: w x unlabelled model + (1 - w) x labelled model
 
 [explorer]
 host = "127.0.0.1"
