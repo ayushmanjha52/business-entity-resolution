@@ -125,6 +125,26 @@ France uses S: synthetic French records (decoy density taken from the test split
 - **Hard siblings (addressed by v4).** Same name and street, shifted house number, in crowded candidate groups.
 - **Name-only records.** For empty-address records whose exact core name belongs to one Source-1 entity, that entity is the true match 97.2 % of the time. When 2–20 entities share the name, the data rarely identifies the right one.
 
-## 8. Not measurable
+## 8. Leaderboard, and the final decision layer
+| File | Local held-out | Leaderboard |
+|---|---|---|
+| v3 (trained at train density) | VALID 0.9806 plain / 0.9552 test-like | ~0.970 |
+| v4 (trained at test-like density) | VALID 0.9783 plain / 0.9754 test-like | 0.9709 |
+| **v5 = v4 + cross-source fill** | VALID 0.97862 plain / 0.97544 test-like | expected ~0.971 |
+
+The leaderboard moved much less than the test-like measurement predicted. So the real test is closer to plain density: the synthetic siblings are harder than the real ones.
+
+Decision-layer experiments on the development models (VALID chooses, TEST confirms):
+
+| Change | Plain VALID | Plain TEST | Decision |
+|---|---|---|---|
+| Cross-source fill, p ≥ 0.5 | 0.97826 → 0.97862 | 0.97816 → 0.97856 | **kept** |
+| Second-chance ownership | −0.00007 | −0.00004 | rejected |
+| One record per source per entity | – | – | rejected: 51-55 % of entities truly have several |
+| Per-segment probability shifts (country × address × name frequency) | +0.00043 | +0.00020, shifts reverse between densities | rejected: not robust |
+
+Blocking follow-up: 86.6 % of the remaining misses share a name token with their entity, and nearly all with an address share address tokens. They are ranked out of the top 8, not unretrievable. Re-ranking by address evidence lowered recall. A top-12 cut raised recall 0.9794 → 0.9814 and test-like VALID/TEST by +0.0003/+0.0004, but its final refit exceeds 16 GB of RAM (see EXPERIMENT_LOG #49).
+
+## 9. Not measurable
 - France accuracy (no labels).
 - The leaderboard score (only the portal computes it).

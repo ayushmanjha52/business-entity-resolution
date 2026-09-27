@@ -5,5 +5,5 @@ student_resource/
 *.zip
 __pycache__/
 .pytest_cache/
-output_probe_*/
 catboost_info/
+.claude/

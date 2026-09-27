@@ -22,7 +22,16 @@ Source-1 training entities are split by a hash of their id: TRAIN 50 % (fitting)
   - hard same-street siblings;
   - empty-address records whose name is shared by several Source-1 entities.
 
-Test submission: 1,732,544 rows, 5,746,970 matched ids (v5: + cross-source fill), official validator **PASS** with `--check-ids`.
+### Leaderboard and final submission
+| File | What changed | Leaderboard |
+|---|---|---|
+| v3 | blocking v3, rarity features, leak-free lexicon | ~0.970 |
+| v4 | trained at test-like decoy density, France self-training | **0.9709** |
+| **v5 (final)** | v4 + cross-source fill in the decision layer (VALID/TEST +0.0004) | expected ~0.971 |
+
+The final file has 1,732,544 rows and 5,746,970 matched ids, and passes the official validator with `--check-ids`.
+
+The real test behaves closer to plain density than to the synthetic test-like density: the test-like gain of v4 (+0.020 locally) moved the leaderboard only slightly. A wider candidate cut (top 12 instead of 8) was validated at +0.0003 to +0.0004, but its final refit (24.1M pairs) does not fit in 16 GB of RAM, so the submitted configuration keeps the top 8. Every experiment, including the rejected ones, is in [docs/EXPERIMENT_LOG.md](docs/EXPERIMENT_LOG.md).
 
 ## Quick start
 ```bash
@@ -80,7 +89,7 @@ python scripts/create_submission.py --team <team_name>   # builds <team>_submiss
    - house-number geometry, including digit deletions;
    - noise flags.
 5. **Stage 2** adds **competition features** from out-of-fold stage-1 scores (rank and margin among the entity's candidates, the rival entity's claim on the record) and **group-coherence features** (the record compared with the entity's most confident other record).
-6. **Decide.** Each record goes to at most one entity. Each entity's list is the probability-ranked prefix that maximises expected F0.5. The probabilities are calibrated, and the only free parameter (a probability floor) is frozen on VALID.
+6. **Decide.** Each record goes to at most one entity. Each entity's list is the probability-ranked prefix that maximises expected F0.5. The probabilities are calibrated, and the only free parameter (a probability floor) is frozen on VALID. Then a **cross-source fill** runs: 80 % of entities are matched in both Source 2 and Source 3, so a list holding a single source gets its best unassigned record of the other source when p ≥ 0.5.
 7. **France without labels.** The reverse-engineered noise generator is re-applied to unlabelled French Source-1 records to synthesise labelled true variants and sibling decoys. France pairs are scored by the model trained with this block.
 
 More detail: [docs/METHODOLOGY.md](docs/METHODOLOGY.md) · [docs/BLOCKING.md](docs/BLOCKING.md) · [docs/FEATURES.md](docs/FEATURES.md) · [docs/MODEL.md](docs/MODEL.md) · [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · [docs/EXPERIMENT_LOG.md](docs/EXPERIMENT_LOG.md)
