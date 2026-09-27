@@ -70,6 +70,9 @@ Unless noted, scores are macro F0.5 on the 10 % Source-1 validation holdout (220
 | 45 | Task 2: one record per source per entity | labels: 51 % (S2) / 55 % (S3) of entities have several | rejected without running |
 | 46 | Task 2: cross-source fill (single-source list gets its best free other-source record at p >= t) | t=0.5: VALID plain 0.97826 -> 0.97862, TEST plain 0.97816 -> 0.97856; test-like +0.00006 / +0.00007 | **kept** (`decision.cross_source_min_prob = 0.5`) |
 
+| 47 | Task 3: per-segment logit shift (country x has address x name frequency), coordinate ascent on VALID, TEST once | plain VALID +0.00043, TEST +0.00020; test-like VALID +0.00009, TEST +0.00002; shifts reverse sign between densities | rejected: not robust |
+| 48 | Task 4: multilingual cross-encoder on pairs with score in [0.3, 0.7] | not run: CPU-only fine-tuning ~4 h per epoch plus ~2 h inference on the deadline day; remaining borderline errors are name-only / same-street cases | skipped |
+
 ## Negative or neutral results (kept for honesty)
 - Stage-2 gain importance ranks the noise flags near zero, but removing them costs 0.0007 F0.5. Gain importance under-reports features that act in rare but decisive cases.
 - The synthetic block closes only about 23 % of the gap to real labels in the leave-India-out test (0.9098 → 0.9193 vs 0.9513). Operators specific to the unlabelled country cannot be generated if they are never observed.

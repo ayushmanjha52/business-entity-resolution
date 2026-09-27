@@ -22,7 +22,7 @@ Source-1 training entities are split by a hash of their id: TRAIN 50 % (fitting)
   - hard same-street siblings;
   - empty-address records whose name is shared by several Source-1 entities.
 
-Test submission: 1,732,544 rows, 5,729,248 matched ids, official validator **PASS** with `--check-ids`.
+Test submission: 1,732,544 rows, 5,746,970 matched ids (v5: + cross-source fill), official validator **PASS** with `--check-ids`.
 
 ## Quick start
 ```bash
