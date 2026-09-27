@@ -73,6 +73,8 @@ Unless noted, scores are macro F0.5 on the 10 % Source-1 validation holdout (220
 | 47 | Task 3: per-segment logit shift (country x has address x name frequency), coordinate ascent on VALID, TEST once | plain VALID +0.00043, TEST +0.00020; test-like VALID +0.00009, TEST +0.00002; shifts reverse sign between densities | rejected: not robust |
 | 48 | Task 4: multilingual cross-encoder on pairs with score in [0.3, 0.7] | not run: CPU-only fine-tuning ~4 h per epoch plus ~2 h inference on the deadline day; remaining borderline errors are name-only / same-street cases | skipped |
 
+| 49 | Candidate cut top-8 -> top-12, full re-block + dev retrain | pair recall 0.9794 -> 0.9814, oracle 0.9929 -> 0.9936; test-like VALID 0.97544 -> 0.97573, TEST 0.97530 -> 0.97566; plain VALID 0.97826 -> 0.9784 | kept in principle, **not submitted**: the final refit on 24.1M pairs swapped (one CV fold took 4.3 h on 16 GB) and could not finish before the deadline; config stays top-8 to match the submitted file |
+
 ## Negative or neutral results (kept for honesty)
 - Stage-2 gain importance ranks the noise flags near zero, but removing them costs 0.0007 F0.5. Gain importance under-reports features that act in rare but decisive cases.
 - The synthetic block closes only about 23 % of the gap to real labels in the leave-India-out test (0.9098 → 0.9193 vs 0.9513). Operators specific to the unlabelled country cannot be generated if they are never observed.

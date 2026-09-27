@@ -22,7 +22,7 @@ pseudo_pair_max = 400000 # France/unlabelled countries: pseudo-pairs used for eq
 
 [blocking]
 s1_key_cap = 150         # skip keys shared by more Source-1 records than this (30 -> 150: pair recall 0.9605 -> 0.9710)
-top_per_record = 8       # max candidates kept per Source-2/3 record (ranked by weighted key votes)
+top_per_record = 8       # max candidates kept per Source-2/3 record (12 measured +0.0003 VALID but the refit does not fit in 16 GB)
 min_rel_votes = 0.35     # and only those with votes >= this fraction of the record's best
 chunk_size = 250000      # Source-2/3 records per blocking chunk (bounds the posting-list expansion)
 number_keys = 3          # first N address numbers used in number keys
